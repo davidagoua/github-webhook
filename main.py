@@ -1,24 +1,33 @@
-from fastapi import FastAPI, HTTPException
-from fastapi import Request
-import subprocess
+from flask import Flask, request, abort
 import os
+from subprocess import Popen, PIPE
 
-app = FastAPI()
+app = Flask(__name__)
 
-@app.post("/webhook")
-async def github_webhook(request: Request):
-    data = await request.json()
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.method == 'POST':
+        payload = request.get_json()
 
-    # Vérifie que l'événement est un push et que la branche est master
-    if request.headers.get('X-GitHub-Event') == 'push' and data['ref'] == 'refs/heads/master':
-        # Remplacez 'your_repo_path' par le chemin absolu de votre référentiel local
-        repo_path = '/repo'
+        # Vérifier si l'événement est un push sur la branche master
+        if 'ref' in payload and payload['ref'] == 'refs/heads/master':
 
-        try:
-            # Effectue un git pull dans le dossier du référentiel
-            subprocess.run(["git", "pull","origin","master"], cwd=repo_path, check=True)
-            return {"status": "success", "message": "Git pull réussi."}
-        except subprocess.CalledProcessError as e:
-            raise HTTPException(status_code=500, detail=f"Erreur lors de git pull: {e}")
+            # Chemin vers le dossier où vous voulez effectuer le 'git pull'
+            repo_path = '/repo'
+
+            # Exécuter 'git pull'
+            git_process = Popen(['git', 'pull'], cwd=repo_path, stdout=PIPE, stderr=PIPE)
+            stdout, stderr = git_process.communicate()
+
+            # Vérifier si 'git pull' a été effectué avec succès
+            if git_process.returncode == 0:
+                return 'Git pull réussi', 200
+            else:
+                return f'Erreur lors du git pull:\n{stdout.decode("utf-8")}\n{stderr.decode("utf-8")}', 500
+        else:
+            return 'Événement non traité', 200
     else:
-        return {"status": "ignored", "message": "Événement ignoré."}
+        abort(400)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
